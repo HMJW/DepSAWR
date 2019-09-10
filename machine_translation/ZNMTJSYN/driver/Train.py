@@ -67,7 +67,7 @@ def train(nmt, train_srcs, train_tgts, config):
                 test_start_time = time.time()
                 test_bleu = evaluate(nmt, test_files, config, global_step)
                 during_time = float(time.time() - test_start_time)
-                print("step %d, epoch %d: dev bleu: %.2f, time %.2f" \
+                print("step %d, epoch %d: test bleu: %.2f, time %.2f" \
                       % (global_step, iter, test_bleu, during_time))
 
                 if dev_bleu > best_bleu:
