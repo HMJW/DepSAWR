@@ -132,7 +132,10 @@ def evaluate(nmt, eval_files, config, global_step):
     # Get bleu value
     bleu_val = re.findall('BLEU = (.*?),', bleu_exec, re.S)[0]
     bleu_val = float(bleu_val)
-
+    try:
+        os.remove(outputFile)
+    except Exception as e:
+        pass
     return bleu_val
 
 

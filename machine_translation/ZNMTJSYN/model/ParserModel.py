@@ -53,11 +53,11 @@ class ParserModel(nn.Module):
         self.mlp_arc_dep = NonLinear(
             input_size = 2*config.lstm_hiddens,
             hidden_size = config.mlp_arc_size+config.mlp_rel_size,
-            activation = nn.Tanh())
+            activation = nn.LeakyReLU(0.1))
         self.mlp_arc_head = NonLinear(
             input_size = 2*config.lstm_hiddens,
             hidden_size = config.mlp_arc_size+config.mlp_rel_size,
-            activation = nn.Tanh())
+            activation = nn.LeakyReLU(0.1))
 
         self.total_num = int((config.mlp_arc_size+config.mlp_rel_size) / 100)
         self.arc_num = int(config.mlp_arc_size / 100)
