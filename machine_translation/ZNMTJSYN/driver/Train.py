@@ -177,6 +177,10 @@ if __name__ == '__main__':
     parser_model.load_state_dict(torch.load(parser_config.load_model_path, \
                                 map_location=lambda storage, loc: storage))
 
+    if config.parser_tune == 0:
+        for param in parser_model.parameters():
+            param.requires_grad = False
+
     train_files = config.train_files.strip().split(' ')
     train_srcs, train_tgts = read_training_corpus(train_files[0], train_files[1], \
                                                   config.max_src_length, config.max_tgt_length)

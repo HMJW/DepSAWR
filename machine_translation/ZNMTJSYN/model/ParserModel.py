@@ -37,7 +37,6 @@ class ParserModel(nn.Module):
         self.word_embed.weight.data.copy_(torch.from_numpy(word_init))
 
         self.extword_embed.weight.data.copy_(torch.from_numpy(pretrained_embedding))
-        self.extword_embed.weight.requires_grad = False
 
 
         self.lstm = MyLSTM(
@@ -67,8 +66,6 @@ class ParserModel(nn.Module):
                                      1, bias=(True, False))
         self.rel_biaffine = Biaffine(config.mlp_rel_size, config.mlp_rel_size, \
                                      vocab.rel_size, bias=(True, True))
-        self.arc_biaffine.linear.weight.requires_grad = False
-        self.rel_biaffine.linear.weight.requires_grad = False
 
 
     def forward(self, words, extwords, masks):
