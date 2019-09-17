@@ -123,6 +123,7 @@ class NMTHelper(object):
         dep_chars = []
 
         for b, instance in enumerate(batch):
+            chars = []
             for index, word in enumerate(instance[0]):
                 src_words[b, index] = word
 
