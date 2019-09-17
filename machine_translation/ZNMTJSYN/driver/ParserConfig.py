@@ -138,3 +138,9 @@ class ParserConfigurable(object):
 	def update_every(self):
 		return self._config.getint('Run','update_every')
 
+	@property
+	def char_dim(self):
+		return self._config.getint('Network','char_dim')
+	@property
+	def charlstm_dim(self):
+		return self._config.getint('Network','charlstm_dim')

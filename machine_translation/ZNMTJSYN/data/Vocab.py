@@ -43,13 +43,16 @@ class NMTVocab:
 
 class Vocab(object):
     PAD, ROOT, UNK = 0, 1, 2
-    def __init__(self, word_counter, rel_counter, relroot='root', min_occur_count = 2):
+    def __init__(self, word_counter, chars, rel_counter, relroot='root', min_occur_count = 2):
         self._root = relroot
         self._root_form = '<' + relroot.lower() + '>'
         self._id2word = ['<pad>', self._root_form, '<unk>']
         self._wordid2freq = [10000, 10000, 10000]
         self._id2extword = ['<pad>', self._root_form, '<unk>']
         self._id2rel = ['<pad>', relroot]
+        self._chars = ['<pad>', self._root_form, '<unk>'] + chars
+        self._char2id = {c:i for i, c in enumerate(self._chars)}
+
         for word, count in word_counter.most_common():
             if count > min_occur_count:
                 self._id2word.append(word)
@@ -67,7 +70,7 @@ class Vocab(object):
         if len(self._rel2id) != len(self._id2rel):
             print("serious bug: relation labels dumplicated, please check!")
 
-        print("Vocab info: #words %d, #rels %d" % (self.vocab_size, self.rel_size))
+        print("Vocab info: #words %d, #chars %d, #rels %d" % (self.vocab_size, self.char_size, self.rel_size))
 
     def load_pretrained_embs(self, embfile):
         embedding_dim = -1
@@ -91,6 +94,8 @@ class Vocab(object):
                 embeddings[self.UNK] += vector
                 embeddings[index] = vector
                 index += 1
+        self._chars += sorted(set("".join(self._id2extword)).difference(self._char2id))
+        self._char2id = {c:i for i, c in enumerate(self._chars)}
 
         embeddings[self.UNK] = embeddings[self.UNK] / word_count
         embeddings = embeddings / np.std(embeddings)
@@ -135,8 +140,14 @@ class Vocab(object):
 
     def word2id(self, xs):
         if isinstance(xs, list):
-            return [self._word2id.get(x, self.UNK) for x in xs]
-        return self._word2id.get(xs, self.UNK)
+            return [self._word2id.get(x.lower(), self.UNK) for x in xs]
+        return self._word2id.get(xs.lower(), self.UNK)
+
+    def char2id(self, word, max_length=20):
+        ids = [self._char2id.get(c, self.UNK)
+                                for c in word[:max_length]]
+        ids += [0] * (max_length - len(word))
+        return ids
 
     def id2word(self, xs):
         if isinstance(xs, list):
@@ -169,19 +180,21 @@ class Vocab(object):
         return self._id2rel[xs]
 
     def copyfrom(self, vocab):
-       self._root = vocab._root
-       self._root_form = vocab._root_form
+        self._root = vocab._root
+        self._root_form = vocab._root_form
 
-       self._id2word = copy.deepcopy(vocab._id2word)
-       self._wordid2freq = copy.deepcopy(vocab._wordid2freq)
-       self._id2extword = copy.deepcopy(vocab._id2extword)
-       self._id2rel = copy.deepcopy(vocab._id2rel)
+        self._id2word = copy.deepcopy(vocab._id2word)
+        self._wordid2freq = copy.deepcopy(vocab._wordid2freq)
+        self._id2extword = copy.deepcopy(vocab._id2extword)
+        self._chars = copy.deepcopy(vocab._chars)
+        self._id2rel = copy.deepcopy(vocab._id2rel)
 
-       self._word2id = copy.deepcopy(vocab._word2id)
-       self._extword2id = copy.deepcopy(vocab._extword2id)
-       self._rel2id = copy.deepcopy(vocab._rel2id)
+        self._word2id = copy.deepcopy(vocab._word2id)
+        self._extword2id = copy.deepcopy(vocab._extword2id)
+        self._rel2id = copy.deepcopy(vocab._rel2id)
+        self._char2id = copy.deepcopy(vocab._char2id)
 
-       print("Vocab info: #words %d, #rels %d" % (self.vocab_size, self.rel_size))
+        print("Vocab info: #words %d, #rels %d" % (self.vocab_size, self.rel_size))
 
 
     @property
@@ -196,4 +209,6 @@ class Vocab(object):
     def rel_size(self):
         return len(self._id2rel)
 
-
+    @property
+    def char_size(self):
+        return len(self._char2id)

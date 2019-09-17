@@ -1,17 +1,23 @@
 from module.Layer import *
 from data.Vocab import *
+from torch.nn.utils.rnn import pad_sequence
 
 
-def drop_input_independent(word_embeddings, dropout_emb):
+def drop_input_independent(word_embeddings, tag_embeddings, dropout_emb):
     batch_size, seq_length, _ = word_embeddings.size()
     word_masks = word_embeddings.data.new(batch_size, seq_length).fill_(1 - dropout_emb)
-    word_masks = Variable(torch.bernoulli(word_masks), requires_grad=False)
-    scale = 1.0 / (1.0 * word_masks + 1e-12)
+    word_masks = torch.bernoulli(word_masks)
+    tag_masks = tag_embeddings.data.new(batch_size, seq_length).fill_(1 - dropout_emb)
+    tag_masks = torch.bernoulli(tag_masks)
+    scale = 3.0 / (2.0 * word_masks + tag_masks + 1e-12)
     word_masks *= scale
+    tag_masks *= scale
     word_masks = word_masks.unsqueeze(dim=2)
+    tag_masks = tag_masks.unsqueeze(dim=2)
     word_embeddings = word_embeddings * word_masks
+    tag_embeddings = tag_embeddings * tag_masks
 
-    return word_embeddings
+    return word_embeddings, tag_embeddings
 
 def drop_sequence_sharedmask(inputs, dropout, batch_first=True):
     if batch_first:
@@ -32,7 +38,7 @@ class ParserModel(nn.Module):
         self.config = config
         self.word_embed = nn.Embedding(vocab.vocab_size, config.word_dims, padding_idx=vocab.PAD)
         self.extword_embed = nn.Embedding(vocab.extvocab_size, config.word_dims, padding_idx=vocab.PAD)
-
+        self.charlstm = CHAR_LSTM(n_chars=vocab.char_size, n_embed=config.char_dim, n_out=config.charlstm_dim)
         word_init = np.zeros((vocab.vocab_size, config.word_dims), dtype=np.float32)
         self.word_embed.weight.data.copy_(torch.from_numpy(word_init))
 
@@ -40,7 +46,7 @@ class ParserModel(nn.Module):
 
 
         self.lstm = MyLSTM(
-            input_size=config.word_dims,
+            input_size=config.word_dims + config.charlstm_dim,
             hidden_size=config.lstm_hiddens,
             num_layers=config.lstm_layers,
             batch_first=True,
@@ -68,11 +74,17 @@ class ParserModel(nn.Module):
                                      vocab.rel_size, bias=(True, True))
 
 
-    def forward(self, words, extwords, masks):
+    def forward(self, words, extwords, chars, masks):
         # x = (batch size, sequence length, dimension of embedding)
+        word_mask = masks.byte()
+        lens = word_mask.sum(1)
+        char_emb = self.charlstm(chars[word_mask])
+        char_emb = pad_sequence(torch.split(char_emb, lens.tolist()), True)
+
         x_word_embed = self.word_embed(words)
         x_extword_embed = self.extword_embed(extwords)
         x_embed = x_word_embed + x_extword_embed
+        x_embed = torch.cat([x_embed, char_emb], dim=-1)
 
         results = []
         results.append(x_embed)

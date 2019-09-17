@@ -56,7 +56,7 @@ class Encoder(nn.Module):
                                      add_position_embedding=True
                                      )
 
-        self.transformer_emb = nn.Linear(parser_config.word_dims, d_word_vec, bias=False)
+        self.transformer_emb = nn.Linear(parser_config.word_dims + parser_config.charlstm_dim, d_word_vec, bias=False)
         parser_dim = 2 * parser_config.lstm_hiddens
         transformer_lstm = []
         for layer in range(parser_config.lstm_layers):
