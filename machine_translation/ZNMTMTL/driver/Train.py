@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import sys
-sys.path.extend(["../","./"])
+sys.path.extend(["../../","../","./"])
 import argparse
 import random
 from driver.Config import *
@@ -168,10 +168,10 @@ if __name__ == '__main__':
     print("\nGPU using status: ", config.use_cuda)
 
     train_files = config.train_files.strip().split(' ')
-    train_srcs, train_tgts = read_training_corpus(train_files[0], train_files[1], \
+    train_srcs, train_tgts, train_trees = read_training_corpus(train_files[0], train_files[1], train_files[2], \
                                                   config.max_src_length, config.max_tgt_length)
 
-    src_vocab, tgt_vocab = creat_vocabularies(train_srcs, train_tgts, config.src_vocab_size, config.tgt_vocab_size)
+    src_vocab, tgt_vocab = creat_vocabularies(train_srcs, train_tgts, train_trees, config.src_vocab_size, config.tgt_vocab_size)
     if args.tgt_word_file is not None:
         tgt_words = read_tgt_words(args.tgt_word_file)
         tgt_vocab = NMTVocab(tgt_words)
@@ -181,9 +181,9 @@ if __name__ == '__main__':
     print("Sentence Number: #train = %d" %(len(train_srcs)))
 
     # model
-    nmt_model = eval(config.model_name)(config, src_vocab.size, tgt_vocab.size, config.use_cuda)
+    nmt_model = eval(config.model_name)(config, src_vocab.size, tgt_vocab.size, src_vocab.rel_size, config.use_cuda)
     critic = NMTCritierion(label_smoothing=config.label_smoothing)
-
+    exit()
     if config.use_cuda:
         #torch.backends.cudnn.enabled = False
         nmt_model = nmt_model.cuda()

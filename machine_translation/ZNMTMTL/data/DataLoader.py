@@ -3,6 +3,14 @@ from collections import Counter
 from data.Vocab import *
 import numpy as np
 import codecs
+from .dependency import *
+
+def read_tree_corpus(file_path, vocab=None):
+    data = []
+    with open(file_path, 'r', encoding='utf-8') as infile:
+        for sentence in readDepTree(infile, vocab):
+            data.append(sentence)
+    return data
 
 def read_corpus(file_path):
     data = []
@@ -26,24 +34,27 @@ def read_tgt_words(file_path):
             tgt_words.append(sent[0])
     return tgt_words
 
-def read_training_corpus(file_src_path, file_tgt_path, max_src_length, max_tgt_length):
+def read_training_corpus(file_src_path, file_tgt_path, file_conll_path, max_src_length, max_tgt_length):
     src_data_org = read_corpus(file_src_path)
+    src_tree_org = read_tree_corpus(file_conll_path)
     tgt_data_org = read_corpus(file_tgt_path)
     length_src = len(src_data_org)
+    length_tree = len(src_tree_org)
     length_tgt = len(src_data_org)
-    if length_src != length_tgt:
+    if not length_src == length_tgt == length_tree:
         print("The numbers of training sentences do not match")
-    src_data, tgt_data = [], []
+    src_data, tgt_data, src_tree = [], [], []
     for index in range(length_src):
         if len(src_data_org[index]) > max_src_length or len(tgt_data_org[index]) > max_tgt_length:
             continue
         src_data.append(src_data_org[index])
         tgt_data.append(tgt_data_org[index])
+        src_tree.append(src_tree_org[index])
 
-    return src_data, tgt_data
+    return src_data, tgt_data, src_tree
 
 
-def creat_vocabularies(src_data, tgt_data, src_vocab_size, tgt_vocab_size):
+def creat_vocabularies(src_data, tgt_data, src_tree, src_vocab_size, tgt_vocab_size):
     src_word_counter = Counter()
     for sentence in src_data:
         for word in sentence:
@@ -54,11 +65,13 @@ def creat_vocabularies(src_data, tgt_data, src_vocab_size, tgt_vocab_size):
         for word in sentence:
             tgt_word_counter[word] += 1
 
+    rels = [dep.rel for sentence in src_tree for dep in sentence]
+    rels = sorted(set(rels))
     src_most_common = [ite for ite, it in src_word_counter.most_common(src_vocab_size)]
     tgt_most_common = [ite for ite, it in tgt_word_counter.most_common(tgt_vocab_size)]
 
-    src_vocab = NMTVocab(src_most_common)
-    tgt_vocab = NMTVocab(tgt_most_common)
+    src_vocab = NMTVocab(src_most_common, rels)
+    tgt_vocab = NMTVocab(tgt_most_common, None)
 
     return src_vocab, tgt_vocab
 

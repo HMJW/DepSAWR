@@ -215,7 +215,7 @@ class Transformer(nn.Module):
     ''' A sequence to sequence model with attention mechanism. '''
 
     def __init__(
-            self, config, n_src_vocab, n_tgt_vocab, use_gpu=True):
+            self, config, n_src_vocab, n_tgt_vocab, n_rel, use_gpu=True):
 
         super(Transformer, self).__init__()
 
