@@ -253,11 +253,11 @@ class Configurable(object):
 
     @property
     def parser_dropout_lstm_input(self):
-        return self._config.getint('Network', 'parser_dropout_lstm_input')
+        return self._config.getfloat('Network', 'parser_dropout_lstm_input')
 
     @property
     def parser_dropout_lstm_hidden(self):
-        return self._config.getint('Network', 'parser_dropout_lstm_hidden')
+        return self._config.getfloat('Network', 'parser_dropout_lstm_hidden')
 
     @property
     def parser_mlp_arc_size(self):

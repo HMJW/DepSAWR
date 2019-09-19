@@ -255,11 +255,11 @@ class Transformer(nn.Module):
         )
 
         self.mlp_arc_dep = NonLinear(
-            input_size = 2*config.parser_lstm_hiddens,
+            input_size = 2*config.parser_lstm_hidden,
             hidden_size = config.parser_mlp_arc_size+config.parser_mlp_rel_size,
             activation = nn.LeakyReLU(0.1))
         self.mlp_arc_head = NonLinear(
-            input_size = 2*config.parser_lstm_hiddens,
+            input_size = 2*config.parser_lstm_hidden,
             hidden_size = config.parser_mlp_arc_size+config.parser_mlp_rel_size,
             activation = nn.LeakyReLU(0.1))
 
@@ -270,7 +270,7 @@ class Transformer(nn.Module):
         self.arc_biaffine = Biaffine(config.parser_mlp_arc_size, config.parser_mlp_arc_size, \
                                      1, bias=(True, False))
         self.rel_biaffine = Biaffine(config.parser_mlp_rel_size, config.parser_mlp_rel_size, \
-                                     vocab.rel_size, bias=(True, True))
+                                     n_rel, bias=(True, True))
 
         self.encoder = Encoder(
             n_src_vocab, n_layers=config.num_layers, n_head=config.num_heads,
