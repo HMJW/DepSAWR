@@ -7,6 +7,7 @@ from module.Sublayers import PositionwiseFeedForward, MultiHeadedAttention
 from module.Embeddings import Embeddings
 from module.Utils import *
 from data.Vocab import NMTVocab
+from module.Layer import *
 
 
 def get_attn_causal_mask(seq):
@@ -211,6 +212,30 @@ class Generator(nn.Module):
         """
         return self.actn(self.proj(input))
 
+
+def drop_input_independent(word_embeddings, dropout_emb):
+    batch_size, seq_length, _ = word_embeddings.size()
+    word_masks = word_embeddings.data.new(batch_size, seq_length).fill_(1 - dropout_emb)
+    word_masks = Variable(torch.bernoulli(word_masks), requires_grad=False)
+    scale = 1.0 / (1.0 * word_masks + 1e-12)
+    word_masks *= scale
+    word_masks = word_masks.unsqueeze(dim=2)
+    word_embeddings = word_embeddings * word_masks
+
+    return word_embeddings
+
+def drop_sequence_sharedmask(inputs, dropout, batch_first=True):
+    if batch_first:
+        inputs = inputs.transpose(0, 1)
+    seq_length, batch_size, hidden_size = inputs.size()
+    drop_masks = inputs.data.new(batch_size, hidden_size).fill_(1 - dropout)
+    drop_masks = Variable(torch.bernoulli(drop_masks), requires_grad=False)
+    drop_masks = drop_masks / (1 - dropout)
+    drop_masks = torch.unsqueeze(drop_masks, dim=2).expand(-1, -1, seq_length).permute(2, 0, 1)
+    inputs = inputs * drop_masks
+
+    return inputs.transpose(1, 0)
+
 class Transformer(nn.Module):
     ''' A sequence to sequence model with attention mechanism. '''
 
@@ -218,6 +243,34 @@ class Transformer(nn.Module):
             self, config, n_src_vocab, n_tgt_vocab, n_rel, use_gpu=True):
 
         super(Transformer, self).__init__()
+
+        self.lstm = MyLSTM(
+            input_size=config.embed_size,
+            hidden_size=config.parser_lstm_hidden,
+            num_layers=config.parser_lstm_layers,
+            batch_first=True,
+            bidirectional=True,
+            dropout_in = config.parser_dropout_lstm_input,
+            dropout_out=config.parser_dropout_lstm_hidden,
+        )
+
+        self.mlp_arc_dep = NonLinear(
+            input_size = 2*config.parser_lstm_hiddens,
+            hidden_size = config.parser_mlp_arc_size+config.parser_mlp_rel_size,
+            activation = nn.LeakyReLU(0.1))
+        self.mlp_arc_head = NonLinear(
+            input_size = 2*config.parser_lstm_hiddens,
+            hidden_size = config.parser_mlp_arc_size+config.parser_mlp_rel_size,
+            activation = nn.LeakyReLU(0.1))
+
+        self.total_num = int((config.parser_mlp_arc_size+config.parser_mlp_rel_size) / 100)
+        self.arc_num = int(config.parser_mlp_arc_size / 100)
+        self.rel_num = int(config.parser_mlp_rel_size / 100)
+
+        self.arc_biaffine = Biaffine(config.parser_mlp_arc_size, config.parser_mlp_arc_size, \
+                                     1, bias=(True, False))
+        self.rel_biaffine = Biaffine(config.parser_mlp_rel_size, config.parser_mlp_rel_size, \
+                                     vocab.rel_size, bias=(True, True))
 
         self.encoder = Encoder(
             n_src_vocab, n_layers=config.num_layers, n_head=config.num_heads,
@@ -242,13 +295,47 @@ class Transformer(nn.Module):
 
         self.use_gpu = use_gpu
 
-    def forward(self, src_seq, tgt_seq=None, mode="train", **kwargs):
+    def forward(self, src_seq, tgt_seq=None, mode="train", target="nmt", **kwargs):
+        if target == "nmt":
+            if mode == "train":
+                assert tgt_seq is not None
+                return self.force_teaching(src_seq, tgt_seq, **kwargs)
+            elif mode == "infer":
+                return self.batch_beam_search(src_seq=src_seq, **kwargs)
+        elif target == "dep":
+            # x = (batch size, sequence length, dimension of embedding)
+            x_embed = self.encoder.embeddings(src_seq)
 
-        if mode == "train":
-            assert tgt_seq is not None
-            return self.force_teaching(src_seq, tgt_seq, **kwargs)
-        elif mode == "infer":
-            return self.batch_beam_search(src_seq=src_seq, **kwargs)
+            if self.training:
+                x_embed = drop_input_independent(x_embed, self.config.dropout_emb)
+
+            outputs, _ = self.lstm(x_embed, masks, None)
+            outputs = outputs.transpose(1, 0)
+
+            if self.training:
+                outputs = drop_sequence_sharedmask(outputs, self.config.dropout_mlp)
+
+            x_all_dep = self.mlp_arc_dep(outputs)
+            x_all_head = self.mlp_arc_head(outputs)
+
+            if self.training:
+                x_all_dep = drop_sequence_sharedmask(x_all_dep, self.config.dropout_mlp)
+                x_all_head = drop_sequence_sharedmask(x_all_head, self.config.dropout_mlp)
+
+            x_all_dep_splits = torch.split(x_all_dep, [self.arc_size, self.rel_size], dim=2)
+            x_all_head_splits = torch.split(x_all_head, [self.arc_size, self.rel_size], dim=2)
+
+            x_arc_dep = x_all_dep_splits[0]
+            x_arc_head = x_all_head_splits[0]
+
+            arc_logit = self.arc_biaffine(x_arc_dep, x_arc_head)
+            arc_logit = torch.squeeze(arc_logit, dim=3)
+
+            x_rel_dep = x_all_dep_splits[1]
+            x_rel_head = x_all_head_splits[1]
+
+            rel_logit_cond = self.rel_biaffine(x_rel_dep, x_rel_head)
+            return arc_logit, rel_logit_cond
 
     def force_teaching(self, src_seq, tgt_seq, lengths):
 

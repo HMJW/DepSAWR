@@ -241,11 +241,11 @@ class Configurable(object):
 
     @property
     def parser_lstm_hidden(self):
-        return self._config.getfloat('Network', 'parser_lstm_hidden')
+        return self._config.getint('Network', 'parser_lstm_hidden')
 
     @property
-    def parser_lstm_layer(self):
-        return self._config.getfloat('Network', 'parser_lstm_layer')
+    def parser_lstm_layers(self):
+        return self._config.getint('Network', 'parser_lstm_layers')
 
     @property
     def parser_dropout_emb(self):
@@ -253,21 +253,21 @@ class Configurable(object):
 
     @property
     def parser_dropout_lstm_input(self):
-        return self._config.getfloat('Network', 'parser_dropout_lstm_input')
+        return self._config.getint('Network', 'parser_dropout_lstm_input')
 
     @property
     def parser_dropout_lstm_hidden(self):
-        return self._config.getfloat('Network', 'parser_dropout_lstm_hidden')
+        return self._config.getint('Network', 'parser_dropout_lstm_hidden')
 
     @property
     def parser_mlp_arc_size(self):
-        return self._config.getfloat('Network', 'parser_mlp_arc_size')
+        return self._config.getint('Network', 'parser_mlp_arc_size')
 
     @property
     def parser_mlp_rel_size(self):
-        return self._config.getfloat('Network', 'parser_mlp_rel_size')
+        return self._config.getint('Network', 'parser_mlp_rel_size')
 
     @property
     def parser_dropout_mlp(self):
-        return self._config.getfloat('Network', 'parser_dropout_mlp')
+        return self._config.getint('Network', 'parser_dropout_mlp')
 
