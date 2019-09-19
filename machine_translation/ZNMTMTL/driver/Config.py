@@ -269,5 +269,5 @@ class Configurable(object):
 
     @property
     def parser_dropout_mlp(self):
-        return self._config.getint('Network', 'parser_dropout_mlp')
+        return self._config.getfloat('Network', 'parser_dropout_mlp')
 

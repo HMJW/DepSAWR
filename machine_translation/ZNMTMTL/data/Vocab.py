@@ -14,7 +14,7 @@ class NMTVocab:
         reverse = lambda x: dict(zip(x, range(len(x))))
         self.w2i = reverse(self.i2w)
         if rel_list:
-            self.i2r = [self.S_PAD] + rel_list
+            self.i2r = [self.S_PAD, self.S_BOS] + rel_list
             self.r2i = reverse(self.i2r)
         else:
             self.i2r, self.r2i = None, None

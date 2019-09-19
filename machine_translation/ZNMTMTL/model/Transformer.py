@@ -5,6 +5,7 @@ from torch.autograd import Variable
 from module.Basic import BottleLinear as Linear
 from module.Sublayers import PositionwiseFeedForward, MultiHeadedAttention
 from module.Embeddings import Embeddings
+from module.ScaleMix import ScalarMix
 from module.Utils import *
 from data.Vocab import NMTVocab
 from module.Layer import *
@@ -53,21 +54,23 @@ class Encoder(nn.Module):
 
         self.num_layers = n_layers
         self.embeddings = Embeddings(num_embeddings=n_src_vocab,
-                                     embedding_dim=d_word_vec,
+                                     embedding_dim=d_model,
                                      dropout=dropout,
                                      add_position_embedding=True
                                      )
         self.block_stack = nn.ModuleList(
             [EncoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout)
              for _ in range(n_layers)])
-
+        self.linear = nn.Linear(d_word_vec, d_model, bias=False)
         self.layer_norm = nn.LayerNorm(d_model)
 
-    def forward(self, src_seq):
+    def forward(self, src_seq, dep_feature):
         # Word embedding look up
         batch_size, src_len = src_seq.size()
 
         emb = self.embeddings(src_seq)
+        emb = torch.cat([emb, dep_feature], -1)
+        emb = self.linear(emb)
 
         enc_mask = src_seq.data.eq(NMTVocab.PAD)
         enc_slf_attn_mask = enc_mask.unsqueeze(1).expand(batch_size, src_len, src_len)
@@ -243,7 +246,8 @@ class Transformer(nn.Module):
             self, config, n_src_vocab, n_tgt_vocab, n_rel, use_gpu=True):
 
         super(Transformer, self).__init__()
-
+        self.config = config
+        self.sclarmix = ScalarMix(config.parser_lstm_layers)
         self.lstm = MyLSTM(
             input_size=config.embed_size,
             hidden_size=config.parser_lstm_hidden,
@@ -274,7 +278,7 @@ class Transformer(nn.Module):
 
         self.encoder = Encoder(
             n_src_vocab, n_layers=config.num_layers, n_head=config.num_heads,
-            d_word_vec=config.embed_size, d_model=config.embed_size,
+            d_word_vec=config.embed_size + 2*config.parser_lstm_hidden, d_model=config.embed_size,
             d_inner_hid=config.attention_size, dropout=config.dropout_hidden)
 
         self.decoder = Decoder(
@@ -295,60 +299,63 @@ class Transformer(nn.Module):
 
         self.use_gpu = use_gpu
 
-    def forward(self, src_seq, tgt_seq=None, mode="train", target="nmt", **kwargs):
-        if target == "nmt":
-            if mode == "train":
-                assert tgt_seq is not None
-                return self.force_teaching(src_seq, tgt_seq, **kwargs)
-            elif mode == "infer":
-                return self.batch_beam_search(src_seq=src_seq, **kwargs)
-        elif target == "dep":
-            # x = (batch size, sequence length, dimension of embedding)
-            x_embed = self.encoder.embeddings(src_seq)
+    def forward_dep(self, src_seq, mode="train", **kwargs):
+        # x = (batch size, sequence length, dimension of embedding)
+        x_embed = self.encoder.embeddings(src_seq)
 
-            if self.training:
-                x_embed = drop_input_independent(x_embed, self.config.dropout_emb)
+        if self.training:
+            x_embed = drop_input_independent(x_embed, self.config.parser_dropout_emb)
 
-            outputs, _ = self.lstm(x_embed, masks, None)
-            outputs = outputs.transpose(1, 0)
+        masks = src_seq.ne(0).float()
+        outputs, (_, _, all_hiddens) = self.lstm(x_embed, masks, None)
+        dep_feature = self.sclarmix(all_hiddens).transpose(0, 1)
+        outputs = outputs.transpose(1, 0)
 
-            if self.training:
-                outputs = drop_sequence_sharedmask(outputs, self.config.dropout_mlp)
+        if self.training:
+            outputs = drop_sequence_sharedmask(outputs, self.config.parser_dropout_mlp)
 
-            x_all_dep = self.mlp_arc_dep(outputs)
-            x_all_head = self.mlp_arc_head(outputs)
+        x_all_dep = self.mlp_arc_dep(outputs)
+        x_all_head = self.mlp_arc_head(outputs)
 
-            if self.training:
-                x_all_dep = drop_sequence_sharedmask(x_all_dep, self.config.dropout_mlp)
-                x_all_head = drop_sequence_sharedmask(x_all_head, self.config.dropout_mlp)
+        if self.training:
+            x_all_dep = drop_sequence_sharedmask(x_all_dep, self.config.parser_dropout_mlp)
+            x_all_head = drop_sequence_sharedmask(x_all_head, self.config.parser_dropout_mlp)
 
-            x_all_dep_splits = torch.split(x_all_dep, [self.arc_size, self.rel_size], dim=2)
-            x_all_head_splits = torch.split(x_all_head, [self.arc_size, self.rel_size], dim=2)
+        x_all_dep_splits = torch.split(x_all_dep, [self.config.parser_mlp_arc_size, self.config.parser_mlp_rel_size], dim=2)
+        x_all_head_splits = torch.split(x_all_head, [self.config.parser_mlp_arc_size, self.config.parser_mlp_rel_size], dim=2)
 
-            x_arc_dep = x_all_dep_splits[0]
-            x_arc_head = x_all_head_splits[0]
+        x_arc_dep = x_all_dep_splits[0]
+        x_arc_head = x_all_head_splits[0]
 
-            arc_logit = self.arc_biaffine(x_arc_dep, x_arc_head)
-            arc_logit = torch.squeeze(arc_logit, dim=3)
+        arc_logit = self.arc_biaffine(x_arc_dep, x_arc_head)
+        arc_logit = torch.squeeze(arc_logit, dim=3)
 
-            x_rel_dep = x_all_dep_splits[1]
-            x_rel_head = x_all_head_splits[1]
+        x_rel_dep = x_all_dep_splits[1]
+        x_rel_head = x_all_head_splits[1]
 
-            rel_logit_cond = self.rel_biaffine(x_rel_dep, x_rel_head)
-            return arc_logit, rel_logit_cond
+        rel_logit_cond = self.rel_biaffine(x_rel_dep, x_rel_head)
+        return arc_logit, rel_logit_cond, dep_feature
 
-    def force_teaching(self, src_seq, tgt_seq, lengths):
+    def forward(self, src_seq, dep_feature, tgt_seq=None,  mode="train", **kwargs):
+        if mode == "train":
+            assert tgt_seq is not None
+            return self.force_teaching(src_seq, dep_feature, tgt_seq, **kwargs)
+        elif mode == "infer":
+            return self.batch_beam_search(src_seq=src_seq, dep_feature=dep_feature, **kwargs)
 
-        enc_output, enc_mask = self.encoder(src_seq)
+
+    def force_teaching(self, src_seq, dep_feature, tgt_seq, lengths):
+
+        enc_output, enc_mask = self.encoder(src_seq, dep_feature)
         dec_output, _, _ = self.decoder(tgt_seq, enc_output, enc_mask)
 
         return dec_output
 
-    def batch_beam_search(self, src_seq, lengths, beam_size=5, max_steps=150):
+    def batch_beam_search(self, src_seq, dep_feature, lengths, beam_size=5, max_steps=150):
 
         batch_size = src_seq.size(0)
 
-        enc_output, enc_mask = self.encoder(src_seq) # [batch_size, seq_len, dim]
+        enc_output, enc_mask = self.encoder(src_seq, dep_feature) # [batch_size, seq_len, dim]
 
         # dec_caches = self.decoder.compute_caches(enc_output)
 

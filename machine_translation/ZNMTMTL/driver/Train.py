@@ -14,14 +14,14 @@ import os
 import re
 
 
-def train(nmt, train_srcs, train_tgts, config):
+def train(nmt, train_srcs, train_tgts, train_trees, config):
     global_step = 0
-    nmt.prepare_training_data(train_srcs, train_tgts)
+    nmt.prepare_training_data(train_srcs, train_tgts, train_trees)
     valid_files = config.dev_files.strip().split(' ')
     valid_srcs = read_corpus(valid_files[0])
     valid_tgts = read_corpus(valid_files[1])
     nmt.prepare_valid_data(valid_srcs, valid_tgts)
-
+    
     optim = Optimizer(name=config.learning_algorithm,
                       model=nmt.model,
                       lr=config.learning_rate,
@@ -43,7 +43,7 @@ def train(nmt, train_srcs, train_tgts, config):
         total_stats = Statistics()
         batch_num = nmt.batch_num
         batch_iter = 0
-        for batch in create_train_batch_iter(nmt.train_data, nmt.batch_size, shuffle=True):
+        for batch in create_train_batch_iter(nmt.train_data, nmt.batch_size, shuffle=False):
             stat = nmt.train_one_batch(batch)
             total_stats.update(stat)
             batch_iter += 1
@@ -183,13 +183,12 @@ if __name__ == '__main__':
     # model
     nmt_model = eval(config.model_name)(config, src_vocab.size, tgt_vocab.size, src_vocab.rel_size, config.use_cuda)
     critic = NMTCritierion(label_smoothing=config.label_smoothing)
-    exit()
+
     if config.use_cuda:
         #torch.backends.cudnn.enabled = False
         nmt_model = nmt_model.cuda()
         critic = critic.cuda()
 
     nmt = NMTHelper(nmt_model, critic, src_vocab, tgt_vocab, config)
-
-    train(nmt, train_srcs, train_tgts, config)
+    train(nmt, train_srcs, train_tgts, train_trees, config)
 
