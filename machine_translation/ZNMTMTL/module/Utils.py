@@ -365,12 +365,14 @@ class Statistics(object):
     """
     def __init__(self, loss=0, n_words=0, n_correct=0):
         self.loss = loss
+        self.cur_loss = 0
         self.n_words = n_words
         self.n_correct = n_correct
         self.n_src_words = 0
         self.start_time = time.time()
 
     def update(self, stat):
+        self.cur_loss = stat.loss
         self.loss += stat.loss
         self.n_words += stat.n_words
         self.n_correct += stat.n_correct
@@ -386,8 +388,8 @@ class Statistics(object):
 
     def print_out(self, step, epoch, batch, n_batches):
         t = self.elapsed_time()
-        out_info = ("Step %d, Epoch %d, %d/%d| acc: %.2f| ppl: %.2f| %.1f tgt tok/s| %.2f s elapsed") \
-                   % (step, epoch, batch, n_batches,self.accuracy(), self.ppl(), \
+        out_info = ("Step %d, Epoch %d, %d/%d| loss: %.2f| acc: %.2f| ppl: %.2f| %.1f tgt tok/s| %.2f s elapsed") \
+                   % (step, epoch, batch, n_batches, self.cur_loss, self.accuracy(), self.ppl(), \
                     self.n_words / (t + 1e-5), time.time() - self.start_time)
         print(out_info)
         sys.stdout.flush()

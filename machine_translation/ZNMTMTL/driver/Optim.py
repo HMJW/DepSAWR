@@ -7,37 +7,38 @@ from torch.nn.utils.clip_grad import clip_grad_norm
 # is {'params' : [p1, p2, p3...]}.update(generic optimizer args)
 # Example:
 # optim.SGD([
-        # {'params': model.base.parameters()},
-        # {'params': model.classifier.parameters(), 'lr': 1e-3}
-    # ], lr=1e-2, momentum=0.9)
+# {'params': model.base.parameters()},
+# {'params': model.classifier.parameters(), 'lr': 1e-3}
+# ], lr=1e-2, momentum=0.9)
 
 
 class Optimizer(object):
     # Class dict to map lowercase identifiers to actual classes
     methods = {
-        'adadelta':   torch.optim.Adadelta,
-        'adagrad':    torch.optim.Adagrad,
-        'adam':       torch.optim.Adam,
-        'sgd':        torch.optim.SGD,
-        'asgd':       torch.optim.ASGD,
-        'rprop':      torch.optim.Rprop,
-        'rmsprop':    torch.optim.RMSprop,
+        "adadelta": torch.optim.Adadelta,
+        "adagrad": torch.optim.Adagrad,
+        "adam": torch.optim.Adam,
+        "sgd": torch.optim.SGD,
+        "asgd": torch.optim.ASGD,
+        "rprop": torch.optim.Rprop,
+        "rmsprop": torch.optim.RMSprop,
     }
 
     @staticmethod
     def get_params(model):
         """Returns all name, parameter pairs with requires_grad=True."""
-        return list(
-            filter(lambda p: p[1].requires_grad, model.named_parameters()))
+        return list(filter(lambda p: p[1].requires_grad, model.named_parameters()))
 
-    def __init__(self,
-                 name,
-                 model,
-                 lr=0,
-                 weight_decay=0,
-                 grad_clip=None,
-                 optim_args=None,
-                 **kwargs):
+    def __init__(
+        self,
+        name,
+        model,
+        lr=0,
+        weight_decay=0,
+        grad_clip=None,
+        optim_args=None,
+        **kwargs
+    ):
         """
         :param decay_method: Method of learning rate decay.
 
@@ -60,37 +61,58 @@ class Optimizer(object):
 
         # If an explicit lr given, pass it to torch optimizer
         if self.init_lr > 0:
-            self.optim_args['lr'] = self.init_lr
-
+            self.optim_args["lr"] = self.init_lr
 
         # Get all parameters that require grads
         self.named_params = self.get_params(self.model)
+        self.parser_params = [
+            self.model.sclarmix.named_parameters(),
+            self.model.lstm.named_parameters(),
+            self.model.lstm.named_parameters(),
+            self.model.mlp_arc_dep.named_parameters(),
+            self.model.mlp_arc_head.named_parameters(),
+            self.model.arc_biaffine.named_parameters(),
+            self.model.rel_biaffine.named_parameters(),
+        ]
+        self.nmt_params = [
+            self.model.encoder.named_parameters(),
+            self.model.decoder.named_parameters(),
+            self.model.generator.named_parameters(),
+        ]
 
         # Filter out names for gradient clipping
         self.params = [param for (name, param) in self.named_params]
 
         if self.weight_decay > 0:
-            weight_group = {
-                'params': [p for n, p in self.named_params if 'bias' not in n],
-                'weight_decay': self.weight_decay,
+            parser_weight_group = {
+                "params": [p for np in self.parser_params for n, p in np if "bias" not in n],
+                "weight_decay": self.weight_decay,
+                "lr": 0.002,
             }
-            bias_group = {
-                'params': [p for n, p in self.named_params if 'bias' in n],
+            parser_bias_group = {
+                "params": [p for np in self.parser_params for n, p in np if "bias" in n],
+                "lr": 0.002,
             }
-            self.param_groups = [weight_group, bias_group]
+            nmt_weight_group = {"params": [p for np in self.nmt_params for n, p in np if "bias" in n]}
+            nmt_bias_group = {"params": [p for np in self.nmt_params for n, p in np if "bias" in n]}
+            self.param_groups = [
+                parser_weight_group,
+                parser_bias_group,
+                nmt_weight_group,
+                nmt_bias_group,
+            ]
 
         else:
-            self.param_groups = [{'params': self.params}]
+            self.param_groups = [{"params": self.params}]
 
         # Safety check
         n_params = len(self.params)
         for group in self.param_groups:
-            n_params -= len(group['params'])
+            n_params -= len(group["params"])
         assert n_params == 0, "Not all params are passed to the optimizer."
 
         # Create the actual optimizer
-        self.optim = self.methods[self.name](self.param_groups,
-                                             **self.optim_args)
+        self.optim = self.methods[self.name](self.param_groups, **self.optim_args)
 
         # Assign shortcuts
         self.zero_grad = self.optim.zero_grad
@@ -111,24 +133,25 @@ class Optimizer(object):
     def rescale_lrate(self, scale, min_lrate=-1.0):
         if isinstance(scale, list):
             for scale_, group in zip(scale, self.optim.param_groups):
-                group['lr'] = max(group['lr'] * scale_, min_lrate)
+                group["lr"] = max(group["lr"] * scale_, min_lrate)
         else:
             for group in self.optim.param_groups:
-                group['lr'] = max(group['lr'] * scale, min_lrate)
+                group["lr"] = max(group["lr"] * scale, min_lrate)
 
     def get_lrate(self):
         for group in self.optim.param_groups:
-            yield group['lr']
+            yield group["lr"]
 
     def set_lrate(self, lr):
         if isinstance(lr, list):
             for lr_, group in zip(lr, self.optim.param_groups):
-                group['lr'] = lr_
+                group["lr"] = lr_
         else:
             for group in self.optim.param_groups:
-                group['lr'] = lr
+                group["lr"] = lr
 
     def __repr__(self):
         s = "Optimizer => {} (lr: {}, weight_decay: {}, g_clip: {})".format(
-            self.name, self.init_lr, self.weight_decay, self.gclip)
+            self.name, self.init_lr, self.weight_decay, self.gclip
+        )
         return s
