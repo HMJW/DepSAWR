@@ -84,23 +84,12 @@ class Optimizer(object):
         self.params = [param for (name, param) in self.named_params]
 
         if self.weight_decay > 0:
-            parser_weight_group = {
-                "params": [p for np in self.parser_params for n, p in np if "bias" not in n],
+            weight_group = {
+                "params": [p for n, p in self.named_params if "bias" not in n],
                 "weight_decay": self.weight_decay,
-                "lr": 0.002,
             }
-            parser_bias_group = {
-                "params": [p for np in self.parser_params for n, p in np if "bias" in n],
-                "lr": 0.002,
-            }
-            nmt_weight_group = {"params": [p for np in self.nmt_params for n, p in np if "bias" in n]}
-            nmt_bias_group = {"params": [p for np in self.nmt_params for n, p in np if "bias" in n]}
-            self.param_groups = [
-                parser_weight_group,
-                parser_bias_group,
-                nmt_weight_group,
-                nmt_bias_group,
-            ]
+            bias_group = {"params": [p for n, p in self.named_params if "bias" in n]}
+            self.param_groups = [weight_group, bias_group]
 
         else:
             self.param_groups = [{"params": self.params}]

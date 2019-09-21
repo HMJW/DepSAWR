@@ -43,7 +43,7 @@ def train(nmt, train_srcs, train_tgts, train_trees, config):
         total_stats = Statistics()
         batch_num = nmt.batch_num
         batch_iter = 0
-        for batch in create_train_batch_iter(nmt.train_data, nmt.batch_size, shuffle=False):
+        for batch in create_train_batch_iter(nmt.train_data, nmt.batch_size, shuffle=True):
             stat = nmt.train_one_batch(batch)
             total_stats.update(stat)
             batch_iter += 1
@@ -130,10 +130,10 @@ def evaluate(nmt, eval_files, config, global_step):
     # Get bleu value
     bleu_val = re.findall('BLEU = (.*?),', bleu_exec, re.S)[0]
     bleu_val = float(bleu_val)
-    # try:
-    #     os.remove(outputFile)
-    # except Exception as e:
-    #     pass
+    try:
+        os.remove(outputFile)
+    except Exception as e:
+        pass
     return bleu_val
 
 

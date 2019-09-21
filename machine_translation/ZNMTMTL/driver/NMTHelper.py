@@ -53,7 +53,7 @@ class NMTHelper(object):
 
     def rel_data_id(self, src_tree):
         result = self.src_vocab.rel2id([d.rel for d in src_tree])
-        return [self.src_vocab.BOS] + result + [self.tgt_vocab.EOS]
+        return [-1] + result + [-1]
 
 
     def prepare_eval_data(self, src_inputs):
