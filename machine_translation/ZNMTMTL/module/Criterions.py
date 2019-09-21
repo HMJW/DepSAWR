@@ -103,5 +103,4 @@ class NMTCritierion(Critierion):
             gtruth = Variable(tmp_, requires_grad=False)
 
         loss = self.criterion(scores, gtruth)
-
         return loss

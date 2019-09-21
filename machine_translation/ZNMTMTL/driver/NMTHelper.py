@@ -16,7 +16,7 @@ class NMTHelper(object):
         self.src_vocab = src_vocab
         self.tgt_vocab = tgt_vocab
         self.config = config
-        self.dep_critic = torch.nn.CrossEntropyLoss()
+        self.dep_critic = torch.nn.CrossEntropyLoss(reduction="sum")
 
     def prepare_training_data(self, src_inputs, tgt_inputs, src_trees):
         self.train_data = []
@@ -145,14 +145,15 @@ class NMTHelper(object):
                       normalization=normalization,
                       dec_outs=dec_outs,
                       labels=y_label)
-
+        loss /= dec_outs.size(0)
+        dep_loss /= dec_outs.size(0)
         mask = y_label.data.ne(NMTVocab.PAD)
         pred = self.model.generator(dec_outs).data.max(2)[1]  # [batch_size, seq_len]
+
         num_correct = y_label.data.eq(pred).float().masked_select(mask).sum() / normalization
         num_total = mask.sum().float()
 
-        stats = Statistics(loss.item(), num_total, num_correct)
-
+        stats = Statistics(loss.item(), dep_loss.item(), num_total, num_correct)
         return loss + dep_loss, stats
     
     def compute_dep_loss(self, s_src, s_rel, gold_src, gold_rel):
