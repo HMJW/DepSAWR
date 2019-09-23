@@ -61,16 +61,13 @@ class Encoder(nn.Module):
         self.block_stack = nn.ModuleList(
             [EncoderBlock(d_model=d_model, d_inner_hid=d_inner_hid, n_head=n_head, dropout=dropout)
              for _ in range(n_layers)])
-        self.linear = nn.Linear(d_word_vec, d_model, bias=False)
         self.layer_norm = nn.LayerNorm(d_model)
 
-    def forward(self, src_seq, dep_feature):
+    def forward(self, src_seq):
         # Word embedding look up
         batch_size, src_len = src_seq.size()
 
         emb = self.embeddings(src_seq)
-        emb = torch.cat([emb, dep_feature], -1)
-        emb = self.linear(emb)
 
         enc_mask = src_seq.data.eq(NMTVocab.PAD)
         enc_slf_attn_mask = enc_mask.unsqueeze(1).expand(batch_size, src_len, src_len)
@@ -247,23 +244,12 @@ class Transformer(nn.Module):
 
         super(Transformer, self).__init__()
         self.config = config
-        self.sclarmix = ScalarMix(config.parser_lstm_layers)
-        self.lstm = MyLSTM(
-            input_size=config.embed_size,
-            hidden_size=config.parser_lstm_hidden,
-            num_layers=config.parser_lstm_layers,
-            batch_first=True,
-            bidirectional=True,
-            dropout_in = config.parser_dropout_lstm_input,
-            dropout_out=config.parser_dropout_lstm_hidden,
-        )
-
         self.mlp_arc_dep = NonLinear(
-            input_size = 2*config.parser_lstm_hidden,
+            input_size = config.embed_size,
             hidden_size = config.parser_mlp_arc_size+config.parser_mlp_rel_size,
             activation = nn.LeakyReLU(0.1))
         self.mlp_arc_head = NonLinear(
-            input_size = 2*config.parser_lstm_hidden,
+            input_size = config.embed_size,
             hidden_size = config.parser_mlp_arc_size+config.parser_mlp_rel_size,
             activation = nn.LeakyReLU(0.1))
 
@@ -278,7 +264,7 @@ class Transformer(nn.Module):
 
         self.encoder = Encoder(
             n_src_vocab, n_layers=config.num_layers, n_head=config.num_heads,
-            d_word_vec=config.embed_size + 2*config.parser_lstm_hidden, d_model=config.embed_size,
+            d_word_vec=config.embed_size, d_model=config.embed_size,
             d_inner_hid=config.attention_size, dropout=config.dropout_hidden)
 
         self.decoder = Decoder(
@@ -301,15 +287,8 @@ class Transformer(nn.Module):
 
     def forward_dep(self, src_seq, mode="train", **kwargs):
         # x = (batch size, sequence length, dimension of embedding)
-        x_embed = self.encoder.embeddings(src_seq)
-
-        if self.training:
-            x_embed = drop_input_independent(x_embed, self.config.parser_dropout_emb)
-
+        outputs, _ = self.encoder(src_seq)
         masks = src_seq.ne(0).float()
-        outputs, (_, _, all_hiddens) = self.lstm(x_embed, masks, None)
-        dep_feature = self.sclarmix(all_hiddens).transpose(0, 1)
-        outputs = outputs.transpose(1, 0)
 
         if self.training:
             outputs = drop_sequence_sharedmask(outputs, self.config.parser_dropout_mlp)
@@ -334,28 +313,28 @@ class Transformer(nn.Module):
         x_rel_head = x_all_head_splits[1]
 
         rel_logit_cond = self.rel_biaffine(x_rel_dep, x_rel_head)
-        return arc_logit, rel_logit_cond, dep_feature
+        return arc_logit, rel_logit_cond
 
-    def forward(self, src_seq, dep_feature, tgt_seq=None,  mode="train", **kwargs):
+    def forward(self, src_seq, tgt_seq=None,  mode="train", **kwargs):
         if mode == "train":
             assert tgt_seq is not None
-            return self.force_teaching(src_seq, dep_feature, tgt_seq, **kwargs)
+            return self.force_teaching(src_seq, tgt_seq, **kwargs)
         elif mode == "infer":
-            return self.batch_beam_search(src_seq=src_seq, dep_feature=dep_feature, **kwargs)
+            return self.batch_beam_search(src_seq=src_seq, **kwargs)
 
 
-    def force_teaching(self, src_seq, dep_feature, tgt_seq, lengths):
+    def force_teaching(self, src_seq, tgt_seq, lengths):
 
-        enc_output, enc_mask = self.encoder(src_seq, dep_feature)
+        enc_output, enc_mask = self.encoder(src_seq)
         dec_output, _, _ = self.decoder(tgt_seq, enc_output, enc_mask)
 
         return dec_output
 
-    def batch_beam_search(self, src_seq, dep_feature, lengths, beam_size=5, max_steps=150):
+    def batch_beam_search(self, src_seq, lengths, beam_size=5, max_steps=150):
 
         batch_size = src_seq.size(0)
 
-        enc_output, enc_mask = self.encoder(src_seq, dep_feature) # [batch_size, seq_len, dim]
+        enc_output, enc_mask = self.encoder(src_seq) # [batch_size, seq_len, dim]
 
         # dec_caches = self.decoder.compute_caches(enc_output)
 

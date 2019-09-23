@@ -137,9 +137,9 @@ class NMTHelper(object):
         y_inp = seqs_y[:, :-1].contiguous()
         y_label = seqs_y[:, 1:].contiguous()
 
-        s_src, s_rel, dep_feature = self.model.forward_dep(seqs_x, "train")
+        s_src, s_rel = self.model.forward_dep(seqs_x, "train")
         dep_loss = self.compute_dep_loss(s_src, s_rel, src_arcs, src_rels)
-        dec_outs = self.model(seqs_x, dep_feature, y_inp, "train", lengths=xlengths)
+        dec_outs = self.model(seqs_x, y_inp, "train", lengths=xlengths)
 
         loss = self.critic(generator=self.model.generator,
                       normalization=normalization,
@@ -210,8 +210,7 @@ class NMTHelper(object):
 
 
     def translate_batch(self, src_inputs, src_input_lengths):
-        _, _, dep_feature = self.model.forward_dep(src_inputs)
-        word_ids = self.model(src_inputs, dep_feature, lengths=src_input_lengths, mode="infer", beam_size=self.config.beam_size)
+        word_ids = self.model(src_inputs, lengths=src_input_lengths, mode="infer", beam_size=self.config.beam_size)
         word_ids = word_ids.cpu().numpy().tolist()
 
         result = []

@@ -66,9 +66,6 @@ class Optimizer(object):
         # Get all parameters that require grads
         self.named_params = self.get_params(self.model)
         self.parser_params = [
-            self.model.sclarmix.named_parameters(),
-            self.model.lstm.named_parameters(),
-            self.model.lstm.named_parameters(),
             self.model.mlp_arc_dep.named_parameters(),
             self.model.mlp_arc_head.named_parameters(),
             self.model.arc_biaffine.named_parameters(),
