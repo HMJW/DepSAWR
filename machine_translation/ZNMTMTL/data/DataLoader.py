@@ -59,7 +59,7 @@ def creat_vocabularies(src_data, tgt_data, src_tree, src_vocab_size, tgt_vocab_s
     for sentence in src_data:
         for word in sentence:
             src_word_counter[word] += 1
-
+    src_words = list(src_word_counter.keys())
     tgt_word_counter = Counter()
     for sentence in tgt_data:
         for word in sentence:
@@ -70,7 +70,8 @@ def creat_vocabularies(src_data, tgt_data, src_tree, src_vocab_size, tgt_vocab_s
     src_most_common = [ite for ite, it in src_word_counter.most_common(src_vocab_size)]
     tgt_most_common = [ite for ite, it in tgt_word_counter.most_common(tgt_vocab_size)]
 
-    src_vocab = NMTVocab(src_most_common, rels)
+    chars = sorted(set("".join(src_words)))
+    src_vocab = NMTVocab(src_most_common, rels, chars)
     tgt_vocab = NMTVocab(tgt_most_common, None)
 
     return src_vocab, tgt_vocab

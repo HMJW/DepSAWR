@@ -4,7 +4,7 @@ sys.path.extend(["../","./"])
 class NMTVocab:
     PAD, BOS, EOS, UNK = 0, 1, 2, 3
     S_PAD, S_BOS, S_EOS, S_UNK = '<pad>', '<s>', '</s>', '<unk>'
-    def __init__(self, word_list, rel_list=None):
+    def __init__(self, word_list, char_list=None, rel_list=None):
         """
         :param word_list: list of words
         """
@@ -18,11 +18,17 @@ class NMTVocab:
             self.r2i = reverse(self.i2r)
         else:
             self.i2r, self.r2i = None, None
+        if char_list:
+            self.i2c = ['<pad>', '<unk>'] + char_list
+            self.c2i = reverse(self.i2c)
+        else:
+            self.i2c, self.c2i = None, None
+
         if len(self.w2i) != len(self.i2w):
             print("serious bug: words dumplicated, please check!")
 
         if self.i2r:
-            print("Vocab info: #words %d, #rels %d" % (self.size, self.rel_size))
+            print("Vocab info: #words %d, #chars %d, #rels %d" % (self.size, self.char_size, self.rel_size))
         else:
             print("Vocab info: #words %d" % (self.size))
 
@@ -30,6 +36,12 @@ class NMTVocab:
         if isinstance(xs, list):
             return [self.w2i.get(x, self.UNK) for x in xs]
         return self.w2i.get(xs, self.UNK)
+
+    def char2id(self, word, max_length=20):
+        ids = [self._char2id.get(c, self.UNK)
+                                for c in word[:max_length]]
+        ids += [0] * (max_length - len(word))
+        return ids
 
     def id2word(self, xs):
         if isinstance(xs, list):
@@ -59,3 +71,7 @@ class NMTVocab:
     @property
     def rel_size(self):
         return len(self.i2r)
+    
+    @property
+    def char_size(self):
+        return len(self.i2c)
