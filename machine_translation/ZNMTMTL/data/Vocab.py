@@ -38,7 +38,7 @@ class NMTVocab:
         return self.w2i.get(xs, self.UNK)
 
     def char2id(self, word, max_length=20):
-        ids = [self._char2id.get(c, self.UNK)
+        ids = [self.c2i.get(c, self.UNK)
                                 for c in word[:max_length]]
         ids += [0] * (max_length - len(word))
         return ids
@@ -50,7 +50,7 @@ class NMTVocab:
     
     def rel2id(self, xs):
         if isinstance(xs, list):
-            return [self.r2i[x] for x in xs]
+            return [self.r2i.get(x, 2) for x in xs]
         return self.r2i[xs]
 
     def id2rel(self, xs):

@@ -24,7 +24,7 @@ class NMTHelper(object):
         self.train_data.append([])
         for src_input, tgt_input, tree in zip(src_inputs, tgt_inputs, src_trees):
             #idx = int(len(src_input) - 1)
-            self.train_data[0].append((self.src_data_id(src_input), self.tgt_data_id(tgt_input), self.arc_data_id(tree), self.rel_data_id(tree)))
+            self.train_data[0].append((self.src_data_id(src_input), self.src_data_char_id(src_input), self.tgt_data_id(tgt_input), self.arc_data_id(tree), self.rel_data_id(tree)))
         self.train_size = len(src_inputs)
         self.batch_size = self.config.train_batch_size
         batch_num = 0
@@ -36,12 +36,17 @@ class NMTHelper(object):
     def prepare_valid_data(self, src_inputs, tgt_inputs):
         self.valid_data = []
         for src_input, tgt_input in zip(src_inputs, tgt_inputs):
-            self.valid_data.append((self.src_data_id(src_input), self.tgt_data_id(tgt_input)))
+            self.valid_data.append((self.src_data_id(src_input), self.src_data_char_id(src_inputs), self.tgt_data_id(tgt_input)))
         self.valid_size = len(self.valid_data)
 
     def src_data_id(self, src_input):
         result = self.src_vocab.word2id(src_input)
         return [self.src_vocab.BOS] + result + [self.src_vocab.EOS]
+
+    def src_data_char_id(self, src_input):
+        result = [self.src_vocab.char2id(w) for w in [self.src_vocab.S_BOS] + src_input + [self.src_vocab.S_EOS]]
+        result = torch.tensor(result, dtype=torch.long)
+        return result
 
     def tgt_data_id(self, tgt_input):
         result = self.tgt_vocab.word2id(tgt_input)
@@ -69,8 +74,9 @@ class NMTHelper(object):
         src_lengths = [len(batch[i][0]) for i in range(batch_size)]
         max_src_length = int(np.max(src_lengths))
 
-        tgt_lengths = [len(batch[i][1]) for i in range(batch_size)]
+        tgt_lengths = [len(batch[i][2]) for i in range(batch_size)]
         max_tgt_length = int(np.max(tgt_lengths))
+        src_chars = []
         if not training:
             src_words = Variable(torch.LongTensor(batch_size, max_src_length).fill_(NMTVocab.PAD), requires_grad=False)
             tgt_words = Variable(torch.LongTensor(batch_size, max_tgt_length).fill_(NMTVocab.PAD), requires_grad=False)
@@ -78,39 +84,46 @@ class NMTHelper(object):
             for b, instance in enumerate(batch):
                 for index, word in enumerate(instance[0]):
                     src_words[b, index] = word
-                for index, word in enumerate(instance[1]):
+                src_chars.append(torch.tensor(instance[1], dtype=torch.long))
+                for index, word in enumerate(instance[2]):
                     tgt_words[b, index] = word
                 b += 1
 
+            src_chars = pad_sequence(src_chars, True)
             if self.use_cuda:
                 src_words = src_words.cuda(self.device)
+                src_chars = src_chars.cuda(self.device)
                 tgt_words = tgt_words.cuda(self.device)
 
-            return src_words, tgt_words, src_lengths, tgt_lengths
+            return src_words, src_chars, tgt_words, src_lengths, tgt_lengths
         else:
             src_words = Variable(torch.LongTensor(batch_size, max_src_length).fill_(NMTVocab.PAD), requires_grad=False)
             src_arcs = Variable(torch.LongTensor(batch_size, max_src_length).fill_(-1), requires_grad=False)
             src_rels = Variable(torch.LongTensor(batch_size, max_src_length).fill_(-1), requires_grad=False)
             tgt_words = Variable(torch.LongTensor(batch_size, max_tgt_length).fill_(NMTVocab.PAD), requires_grad=False)
+            src_chars = []
 
             for b, instance in enumerate(batch):
                 for index, word in enumerate(instance[0]):
                     src_words[b, index] = word
-                for index, word in enumerate(instance[1]):
-                    tgt_words[b, index] = word
+                src_chars.append(torch.tensor(instance[1], dtype=torch.long))
                 for index, word in enumerate(instance[2]):
-                    src_arcs[b, index] = word
+                    tgt_words[b, index] = word
                 for index, word in enumerate(instance[3]):
+                    src_arcs[b, index] = word
+                for index, word in enumerate(instance[4]):
                     src_rels[b, index] = word
+                
                 b += 1
-
+            src_chars = pad_sequence(src_chars, True)
             if self.use_cuda:
                 src_words = src_words.cuda(self.device)
+                src_chars = src_chars.cuda()
                 src_arcs = src_arcs.cuda(self.device)
                 src_rels = src_rels.cuda(self.device)
                 tgt_words = tgt_words.cuda(self.device)
 
-            return src_words, src_arcs, src_rels, tgt_words, src_lengths, tgt_lengths
+            return src_words, src_chars, src_arcs, src_rels, tgt_words, src_lengths, tgt_lengths
 
     def source_data_variable(self, batch):
         batch_size = len(batch)
@@ -118,16 +131,19 @@ class NMTHelper(object):
         max_src_length = int(src_lengths[0])
 
         src_words = Variable(torch.LongTensor(batch_size, max_src_length).fill_(NMTVocab.PAD), requires_grad=False)
+        src_chars = []
         for b, instance in enumerate(batch):
             for index, word in enumerate(instance[0]):
                 src_words[b, index] = word
+            src_chars.append(instance[1])
             b += 1
-
+        src_chars = pad_sequence(src_chars)
         if self.use_cuda:
             src_words = src_words.cuda(self.device)
-        return src_words, src_lengths
+            src_chars = src_chars.cuda(self.device)
+        return src_words, src_chars, src_lengths
 
-    def compute_forward(self, seqs_x, src_arcs, src_rels, seqs_y, xlengths, normalization=1.0):
+    def compute_forward(self, seqs_x, src_chars, src_arcs, src_rels, seqs_y, xlengths, normalization=1.0):
         """
         :type model: Transformer
 
@@ -137,7 +153,7 @@ class NMTHelper(object):
         y_inp = seqs_y[:, :-1].contiguous()
         y_label = seqs_y[:, 1:].contiguous()
 
-        s_src, s_rel, dep_feature = self.model.forward_dep(seqs_x, "train")
+        s_src, s_rel, dep_feature = self.model.forward_dep(seqs_x, src_chars, "train")
         dep_loss = self.compute_dep_loss(s_src, s_rel, src_arcs, src_rels)
         dec_outs = self.model(seqs_x, dep_feature, y_inp, "train", lengths=xlengths)
 
@@ -174,8 +190,8 @@ class NMTHelper(object):
     def train_one_batch(self, batch):
         self.model.train()
         self.model.zero_grad()
-        src_words, src_arcs, src_rels, tgt_words, src_lengths, tgt_lengths = self.pair_data_variable(batch)
-        loss, stat = self.compute_forward(src_words, src_arcs, src_rels, tgt_words, src_lengths)
+        src_words, src_chars, src_arcs, src_rels, tgt_words, src_lengths, tgt_lengths = self.pair_data_variable(batch)
+        loss, stat = self.compute_forward(src_words, src_chars, src_arcs, src_rels, tgt_words, src_lengths)
         loss = loss / self.config.update_every
         loss.backward()
         return stat
@@ -184,8 +200,8 @@ class NMTHelper(object):
         valid_stat = Statistics()
         self.model.eval()
         for batch in create_batch_iter(self.valid_data, self.config.test_batch_size):
-            src_words, tgt_words, src_lengths, tgt_lengths = self.pair_data_variable(batch, False)
-            loss, stat = self.compute_forward(src_words, tgt_words, src_lengths)
+            src_words, src_chars, tgt_words, src_lengths, tgt_lengths = self.pair_data_variable(batch, False)
+            loss, stat = self.compute_forward(src_words, src_chars, tgt_words, src_lengths)
             valid_stat.update(stat)
         valid_stat.print_valid(global_step)
         return valid_stat
@@ -196,8 +212,8 @@ class NMTHelper(object):
         result = {}
         for batch in create_batch_iter(eval_data, self.config.test_batch_size):
             batch_size = len(batch)
-            src_words, src_lengths = self.source_data_variable(batch)
-            allHyp = self.translate_batch(src_words, src_lengths)
+            src_words, src_chars, src_lengths = self.source_data_variable(batch)
+            allHyp = self.translate_batch(src_words, src_chars, src_lengths)
             all_hyp_inds = [beam_result[0] for beam_result in allHyp]
             for idx in range(batch_size):
                 if all_hyp_inds[idx][-1] == self.tgt_vocab.EOS:
@@ -209,8 +225,8 @@ class NMTHelper(object):
         return result
 
 
-    def translate_batch(self, src_inputs, src_input_lengths):
-        _, _, dep_feature = self.model.forward_dep(src_inputs)
+    def translate_batch(self, src_inputs, src_chars, src_input_lengths):
+        _, _, dep_feature = self.model.forward_dep(src_inputs, src_chars)
         word_ids = self.model(src_inputs, dep_feature, lengths=src_input_lengths, mode="infer", beam_size=self.config.beam_size)
         word_ids = word_ids.cpu().numpy().tolist()
 

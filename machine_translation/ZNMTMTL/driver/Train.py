@@ -188,7 +188,7 @@ if __name__ == '__main__':
     print("Sentence Number: #train = %d" %(len(train_srcs)))
 
     # model
-    nmt_model = eval(config.model_name)(config, src_vocab.size, tgt_vocab.size, src_vocab.rel_size, config.use_cuda)
+    nmt_model = eval(config.model_name)(config, src_vocab.size, src_vocab.char_size, tgt_vocab.size, src_vocab.rel_size, config.use_cuda)
     critic = NMTCritierion(label_smoothing=config.label_smoothing)
 
     if config.use_cuda:

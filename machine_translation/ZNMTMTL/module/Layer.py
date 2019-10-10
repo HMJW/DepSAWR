@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import numpy as np
 from torch.nn import functional, init
+from torch.nn.utils.rnn import pack_padded_sequence, pad_sequence
 
 def get_tensor_np(t):
     return t.data.cpu().numpy()

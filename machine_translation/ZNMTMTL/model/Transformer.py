@@ -9,6 +9,7 @@ from module.ScaleMix import ScalarMix
 from module.Utils import *
 from data.Vocab import NMTVocab
 from module.Layer import *
+from torch.nn.utils.rnn import pad_sequence
 
 
 def get_attn_causal_mask(seq):
@@ -216,16 +217,21 @@ class Generator(nn.Module):
         return self.actn(self.proj(input))
 
 
-def drop_input_independent(word_embeddings, dropout_emb):
+def drop_input_independent(word_embeddings, tag_embeddings, dropout_emb):
     batch_size, seq_length, _ = word_embeddings.size()
     word_masks = word_embeddings.data.new(batch_size, seq_length).fill_(1 - dropout_emb)
-    word_masks = Variable(torch.bernoulli(word_masks), requires_grad=False)
-    scale = 1.0 / (1.0 * word_masks + 1e-12)
+    word_masks = torch.bernoulli(word_masks)
+    tag_masks = tag_embeddings.data.new(batch_size, seq_length).fill_(1 - dropout_emb)
+    tag_masks = torch.bernoulli(tag_masks)
+    scale = 3.0 / (2.0 * word_masks + tag_masks + 1e-12)
     word_masks *= scale
+    tag_masks *= scale
     word_masks = word_masks.unsqueeze(dim=2)
+    tag_masks = tag_masks.unsqueeze(dim=2)
     word_embeddings = word_embeddings * word_masks
+    tag_embeddings = tag_embeddings * tag_masks
 
-    return word_embeddings
+    return word_embeddings, tag_embeddings
 
 def drop_sequence_sharedmask(inputs, dropout, batch_first=True):
     if batch_first:
@@ -243,13 +249,14 @@ class Transformer(nn.Module):
     ''' A sequence to sequence model with attention mechanism. '''
 
     def __init__(
-            self, config, n_src_vocab, n_tgt_vocab, n_rel, use_gpu=True):
+            self, config, n_src_vocab, n_chars, n_tgt_vocab, n_rel, use_gpu=True):
 
         super(Transformer, self).__init__()
         self.config = config
+        self.charlstm = CHAR_LSTM(n_chars, config.parser_char_dim, config.parser_char_out)
         self.sclarmix = ScalarMix(config.parser_lstm_layers)
         self.lstm = MyLSTM(
-            input_size=config.embed_size,
+            input_size=config.embed_size + config.parser_char_out,
             hidden_size=config.parser_lstm_hidden,
             num_layers=config.parser_lstm_layers,
             batch_first=True,
@@ -299,13 +306,17 @@ class Transformer(nn.Module):
 
         self.use_gpu = use_gpu
 
-    def forward_dep(self, src_seq, mode="train", **kwargs):
+    def forward_dep(self, src_seq, src_chars, mode="train", **kwargs):
         # x = (batch size, sequence length, dimension of embedding)
+        masks = src_seq.ne(0)
+        lens = masks.sum(1)
         x_embed = self.encoder.embeddings(src_seq)
-
+        x_char = self.charlstm(src_chars[masks])
+        x_char = pad_sequence(torch.split(x_char, lens.tolist()), True)
         if self.training:
-            x_embed = drop_input_independent(x_embed, self.config.parser_dropout_emb)
+            x_embed, x_char = drop_input_independent(x_embed, x_char, self.config.parser_dropout_emb)
 
+        x_embed = torch.cat([x_embed, x_char], -1)
         masks = src_seq.ne(0).float()
         outputs, (_, _, all_hiddens) = self.lstm(x_embed, masks, None)
         dep_feature = self.sclarmix(all_hiddens).transpose(0, 1)
