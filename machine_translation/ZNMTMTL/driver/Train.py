@@ -75,7 +75,13 @@ def train(nmt, train_srcs, train_tgts, train_trees, config):
                     best_bleu = dev_bleu
                     bad_step = 0
                     if global_step > config.save_after:
-                        torch.save(nmt.model.state_dict(), config.save_model_path + '.' + str(global_step))
+                        model_path = config.load_model_path + '.' + str(best_step)
+                        try:
+                            if os.path.exists(model_path):
+                                os.remove(model_path)
+                            torch.save(nmt.model.state_dict(), config.save_model_path + '.' + str(global_step))
+                        except expression as identifier:
+                            pass
                         best_step = global_step
                 elif eval_time >= config.start_decay_at:
                     bad_step += 1
