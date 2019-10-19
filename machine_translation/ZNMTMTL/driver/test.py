@@ -90,7 +90,7 @@ if __name__ == '__main__':
     tgt_vocab = pickle.load(open(config.load_tgt_vocab_path, "rb"))
 
     print(f"loading best model at {args.best_step} step...")
-    nmt_model = eval(config.model_name)(config, src_vocab.size, tgt_vocab.size, config.use_cuda)
+    nmt_model = eval(config.model_name)(config, src_vocab.size, tgt_vocab.size, src_vocab.rel_size, config.use_cuda)
     model_path = config.load_model_path + f".{args.best_step}"
     nmt_model.load_state_dict(torch.load(model_path, map_location=lambda storage, loc: storage))
     critic = NMTCritierion(label_smoothing=config.label_smoothing)
